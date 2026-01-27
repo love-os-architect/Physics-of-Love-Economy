@@ -70,7 +70,7 @@ python simulation.py
 
 ### The Result: The Singularity Graph
 
-![The Singularity Graph](love_economy_physics.png)
+![Code_Generated_Image3](./Code_Generated_Image3.png)
 
 **Interpretation of the Graph:**
 
