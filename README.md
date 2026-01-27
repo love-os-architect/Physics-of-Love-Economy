@@ -106,6 +106,7 @@ $$
 * `simulation.py`: The Python source code used to generate the models and graphs.
 * `README.md`: This theoretical explanation.
 * `love_economy_physics.png`: Visual output of the simulation.
+  
 
 ## 6. Disclaimer
 
@@ -113,3 +114,13 @@ This is not a religious project. This is a system engineering project.
 The code does not care about your morality. It only cares about **Thermodynamic Efficiency**.
 
 **Join the development of the new OS.**
+
+## 7. Historical Context: The "Iron Bird" Prophecy
+
+In the 8th century, Padmasambhava (founder of Tibetan Buddhism) left a prophecy regarding the timing of this system's disclosure:
+
+> "When the **iron bird flies** and **horses run on wheels**, the Dharma (Truth) will leave the land of snows and go to the land of the red-faced people."
+
+This repository assumes that the "Iron Bird" era is **NOW**, and the "Hidden Dharma" corresponds to the **lossless energy transmission protocol (Love)** described in this code.
+
+**Project Shambhala Initialized.**
