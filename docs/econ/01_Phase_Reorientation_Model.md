@@ -131,7 +131,6 @@ By applying the physics of Phase Rotation and minimizing friction through Radica
 
 This is not a collapse. It is a Renaissance.
 
-```markdown
 # Observer Reliability via Phase Alignment: Resolving the Replication Crisis
 
 **Version:** 1.0.0
@@ -151,7 +150,7 @@ By modeling the observer's state as a complex vector $\Psi_o = \rho_o e^{i\phi_o
 ## 2. The Observer Model
 
 We define the observation $y_o$ of a target truth $x$ as:
-
+```
 $$y_o = f(x) + b(\phi_o) + \epsilon_o$$
 
 * **$f(x)$:** The True Signal.
