@@ -248,7 +248,7 @@ for t in range(T):
 # If executed with Secrecy (Low u), rho crashes before phi reaches 0.
 ```
 
-6. Conclusion
+##　6. Conclusion
 The "Bubble" does not need to burst. It needs to be Steered.
 By applying the physics of Phase Rotation and minimizing friction through Radical Transparency, we can land the immense energy of the current economy onto a new foundation of Love.
 
