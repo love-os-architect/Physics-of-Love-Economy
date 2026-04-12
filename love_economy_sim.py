@@ -1,205 +1,141 @@
+# -*- coding: utf-8 -*-
+"""
+Love-OS Economic Simulator — Final Enhanced Edition
+"Friction Zero" Economy: R (Field Coherence) as the central variable
+"""
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
-# --- 1. Model Configuration & Parameters ---
+@dataclass
+class LoveEconomyParams:
+    # Initial Conditions
+    K: float = 100.0      # Capital Stock
+    N: float = 100.0      # Labor
+    A: float = 1.0        # Technology
+    D: float = 80.0       # Private Debt
+    C_carbon: float = 10.0
+    R: float = 0.75       # Initial Field Coherence (Synchronization)
+
+    # Production
+    alpha: float = 0.35   # Capital share
+    delta: float = 0.06   # Depreciation
+
+    # Demand
+    c_w: float = 0.88     # MPC from wages
+    c_pi: float = 0.35    # MPC from profits
+    inv_sens: float = 0.18
+
+    # Externalities & Policy
+    damage_sens: float = 0.0018
+    energy_intensity: float = 0.48
+
+    # Synchronization Dynamics
+    R_restoration_policy: float = 0.045   # Policy investment in coherence
+    R_restoration_bau: float = 0.008
+    R_target: float = 0.96
+
 
 class LoveEconomySim:
-    def __init__(self, steps=100, dt=1.0):
+    def __init__(self, steps: int = 120, dt: float = 1.0):
         self.steps = steps
         self.dt = dt
-        
-        # --- Base Parameters (Initial Conditions) ---
-        self.K = 100.0   # Capital Stock
-        self.N = 100.0   # Labor Population
-        self.A = 1.0     # Technology Level
-        self.D = 80.0    # Private Debt
-        self.C_carbon = 10.0 # Accumulated Carbon Stock
-        self.R = 0.8     # Synchronization/Field Coherence (0-1)
-        self.WageShare = 0.65 # Wage Share (Labor Share)
-        
-        # --- Structural Parameters ---
-        self.alpha = 0.35 # Capital Share in Production
-        self.delta = 0.05 # Capital Depreciation
-        self.c_w = 0.9    # MPC from Wages
-        self.c_pi = 0.4   # MPC from Profits
-        self.inv_sens = 0.15 # Investment Sensitivity to Profit
-        self.damage_sens = 0.002 # Damage per Carbon Unit
-        self.energy_intensity = 0.5 # Energy per Unit Output
-        
-    def run_scenario(self, policy_mode="BAU"):
-        """
-        Runs the simulation for a specific policy scenario.
-        policy_mode: "BAU" (Business As Usual) or "INTEGRATED" (Love-OS Policy)
-        """
-        
-        # Initialize History Lists
-        hist = {
-            "t": [], "Y_potential": [], "Y_effective": [], 
-            "D_Y_ratio": [], "R": [], "Carbon": [], 
-            "WageShare": [], "Profit": [], "Real_r": []
-        }
-        
-        # Set Dynamic Variables
-        K = self.K
-        D = self.D
-        C_carbon = self.C_carbon
-        R = self.R
-        WS = self.WageShare
-        A = self.A
-        EI = self.energy_intensity
-        
-        # --- Policy Switches ---
-        # 1. Carbon Tax (Internalizing Externalities)
-        tau = 0.05 if policy_mode == "INTEGRATED" else 0.0
-        
-        # 2. Wage Floor (Preventing Profit Paradox)
-        # BAU: Share drops (-0.1%/step). Policy: Stabilizes or grows.
-        d_ws = 0.0005 if policy_mode == "INTEGRATED" else -0.002
-        
-        # 3. Macroprudential (Debt Control)
-        # BAU: r > g_Y (Interest Dominance). Policy: r <= g_Y (Managed).
-        base_r = 0.04 # Nominal interest baseline
-        
-        # 4. Synchronization Investment (Investing in R)
-        # BAU: Friction increases. Policy: Standardization keeps R high.
-        R_target = 0.95 if policy_mode == "INTEGRATED" else 0.60
-        R_restoration = 0.05 if policy_mode == "INTEGRATED" else 0.01
-        
+        self.p = LoveEconomyParams()
+
+    def run(self, policy_mode: str = "BAU") -> pd.DataFrame:
+        p = self.p
+        K, D, C_carbon, R, WS = p.K, p.D, p.C_carbon, p.R, 0.68
+        A, EI = p.A, p.energy_intensity
+
+        hist = {key: [] for key in ["t", "Y_eff", "D_Y", "R", "Carbon", "WageShare", "Real_r"]}
+
         for t in range(self.steps):
-            
-            # --- A. Supply Side (Physical Constraint) ---
-            # Damage function: Carbon stock reduces Effective Tech (A)
-            damage_factor = 1.0 / (1.0 + self.damage_sens * C_carbon)
-            A_eff = A * damage_factor
-            
-            # Potential Output (Cobb-Douglas)
-            # Energy constraints are implicit in EI (Energy Intensity)
-            Y_pot = A_eff * (K**self.alpha) * (self.N**(1-self.alpha))
-            
-            # --- B. Demand Side (Kaleckian / Effective Demand) ---
-            # Distribute Income
+            # Supply Side
+            damage = 1.0 / (1.0 + p.damage_sens * C_carbon)
+            Y_pot = A * damage * (K ** p.alpha) * (p.N ** (1 - p.alpha))
+
+            # Demand Side
             W_bill = Y_pot * WS
             Pi_bill = Y_pot * (1 - WS)
-            
-            # Consumption
-            Cons = self.c_w * W_bill + self.c_pi * Pi_bill
-            
-            # Investment (Profit-driven)
-            Inv = self.inv_sens * Pi_bill + 0.02 * Y_pot
-            
-            # Aggregate Demand
+            Cons = p.c_w * W_bill + p.c_pi * Pi_bill
+            Inv = p.inv_sens * Pi_bill + 0.025 * Y_pot
             AD = Cons + Inv
-            
-            # --- C. Synchronization Constraint (The "R" Factor) ---
-            # Effective Output is limited by Demand AND Friction (R)
-            # Y_eff = R * min(Supply, Demand)
-            # If R is low, transactions fail, logic doesn't sync -> Output drops.
-            Y_eff = R * min(Y_pot, AD)
-            
-            # Actual Realized Profit (after friction)
-            Realized_Pi = Y_eff * (1 - WS)
-            
-            # --- D. Dynamics Updates ---
-            
-            # 1. Capital Accumulation
-            K += (Inv - self.delta * K) * self.dt
-            
-            # 2. Debt Dynamics (Financial Contradiction)
-            # Growth rate of Y
-            g_Y = (Y_eff - hist["Y_effective"][-1])/hist["Y_effective"][-1] if t > 0 else 0.02
-            
-            # Interest Rate Setting
-            if policy_mode == "INTEGRATED":
-                # Policy Rule: r tracks g_Y to prevent explosive D/Y
-                r_eff = min(base_r, max(0.01, g_Y - 0.005))
-            else:
-                # BAU: r is sticky and often > g_Y
-                r_eff = base_r
-            
-            # Debt accumulation (Interest - Repayment from Surplus)
-            # Simple assumption: Repayment is fraction of Output
-            repayment = 0.02 * Y_eff
+
+            # --- Core Love-OS Variable: Field Coherence R ---
+            Y_eff = R * min(Y_pot, AD)                     # Synchronization-constrained output
+
+            # Debt dynamics (r vs g)
+            g_Y = (Y_eff - hist["Y_eff"][-1]) / hist["Y_eff"][-1] if t > 0 else 0.025
+            r_eff = 0.035 if policy_mode == "INTEGRATED" else 0.055   # Policy keeps r ≤ g
+            repayment = 0.018 * Y_eff
             D += (r_eff * D - repayment) * self.dt
-            
-            # 3. Carbon/Externalities
-            # Emissions = Output * Energy Intensity
+
+            # Carbon & Decarbonization
             emissions = Y_eff * EI
             C_carbon += emissions * self.dt
-            # Tech improves EI (faster if Carbon Tax exists)
-            decarb_rate = 0.01 + (0.05 if tau > 0 else 0.0)
-            EI *= (1.0 - decarb_rate)
-            
-            # 4. Synchronization (R) Dynamics
-            # Converges to target with some noise/shocks
-            shock = np.random.normal(0, 0.01)
-            R += (R_restoration * (R_target - R) + shock) * self.dt
-            R = np.clip(R, 0.1, 1.0)
-            
-            # 5. Wage Share Dynamics (Profit Paradox)
-            WS += d_ws * self.dt
-            WS = np.clip(WS, 0.4, 0.9) # Boundaries
-            
-            # --- Record Data ---
+            EI *= (1.0 - 0.012 if policy_mode == "INTEGRATED" else 0.003)
+
+            # Synchronization Dynamics (The Heart of Love-OS)
+            R_target = 0.96 if policy_mode == "INTEGRATED" else 0.55
+            R_rest = p.R_restoration_policy if policy_mode == "INTEGRATED" else p.R_restoration_bau
+            R += R_rest * (R_target - R) + np.random.normal(0, 0.008)
+            R = np.clip(R, 0.15, 1.0)
+
+            # Wage Share (Anti-Profit Paradox)
+            dWS = 0.0008 if policy_mode == "INTEGRATED" else -0.0025
+            WS += dWS * self.dt
+            WS = np.clip(WS, 0.42, 0.78)
+
+            # Record
             hist["t"].append(t)
-            hist["Y_potential"].append(Y_pot)
-            hist["Y_effective"].append(Y_eff)
-            hist["D_Y_ratio"].append(D / Y_eff)
+            hist["Y_eff"].append(Y_eff)
+            hist["D_Y"].append(D / Y_eff)
             hist["R"].append(R)
             hist["Carbon"].append(C_carbon)
             hist["WageShare"].append(WS)
-            hist["Profit"].append(Realized_Pi)
             hist["Real_r"].append(r_eff)
-            
+
         return pd.DataFrame(hist)
 
-# --- 2. Execution & Visualization ---
 
-def plot_simulation():
-    sim = LoveEconomySim(steps=100)
-    
-    # Run Scenarios
-    df_bau = sim.run_scenario("BAU")
-    df_pol = sim.run_scenario("INTEGRATED")
-    
-    # Setup Plot
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('Love-OS Economic Model: BAU vs. Integrated Policy', fontsize=16)
-    
-    # Plot 1: Effective Output (Y)
-    ax = axes[0, 0]
-    ax.plot(df_bau["t"], df_bau["Y_effective"], 'r--', label='BAU (Friction & Weak Demand)', linewidth=2)
-    ax.plot(df_pol["t"], df_pol["Y_effective"], 'g-', label='Integrated (High R & Sync)', linewidth=2)
-    ax.set_title('Effective Output (Growth & Sustainability)')
-    ax.set_ylabel('Real Output')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    
-    # Plot 2: Debt-to-GDP Ratio (Financial Stability)
-    ax = axes[0, 1]
-    ax.plot(df_bau["t"], df_bau["D_Y_ratio"], 'r--', label='BAU (Explosive Debt)', linewidth=2)
-    ax.plot(df_pol["t"], df_pol["D_Y_ratio"], 'g-', label='Integrated (Stable)', linewidth=2)
-    ax.set_title('Debt-to-GDP Ratio (Financial Contradiction)')
-    ax.set_ylabel('Ratio')
-    ax.grid(True, alpha=0.3)
-    
-    # Plot 3: Synchronization (R)
-    ax = axes[1, 0]
-    ax.plot(df_bau["t"], df_bau["R"], 'r--', label='BAU (Fragmentation)', linewidth=2)
-    ax.plot(df_pol["t"], df_pol["R"], 'g-', label='Integrated (Coherence)', linewidth=2)
-    ax.set_title('Field Coherence R (Efficiency Factor)')
-    ax.set_ylim(0, 1.1)
-    ax.grid(True, alpha=0.3)
-    
-    # Plot 4: Carbon Stock (Externalities)
-    ax = axes[1, 1]
-    ax.plot(df_bau["t"], df_bau["Carbon"], 'r--', label='BAU (Accumulation)', linewidth=2)
-    ax.plot(df_pol["t"], df_pol["Carbon"], 'g-', label='Integrated (Internalized)', linewidth=2)
-    ax.set_title('Accumulated Carbon Stock (External Constraints)')
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+def plot_comparison():
+    sim = LoveEconomySim(steps=150)
+    df_bau = sim.run("BAU")
+    df_pol = sim.run("INTEGRATED")
+
+    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle("Love-OS Economic Simulator: BAU vs Integrated (R-Coherence) Policy", fontsize=16)
+
+    # Effective Output
+    axs[0,0].plot(df_bau["t"], df_bau["Y_eff"], 'r--', label='BAU (Low R, Friction Economy)')
+    axs[0,0].plot(df_pol["t"], df_pol["Y_eff"], 'g-', label='Integrated (High R, Zero-Friction Economy)')
+    axs[0,0].set_title("Effective Output")
+    axs[0,0].legend()
+
+    # Debt-to-GDP
+    axs[0,1].plot(df_bau["t"], df_bau["D_Y"], 'r--', label='BAU (Explosive Debt)')
+    axs[0,1].plot(df_pol["t"], df_pol["D_Y"], 'g-', label='Integrated (Stable)')
+    axs[0,1].set_title("Debt / Effective Output Ratio")
+    axs[0,1].legend()
+
+    # Synchronization R
+    axs[1,0].plot(df_bau["t"], df_bau["R"], 'r--', label='BAU (Fragmentation)')
+    axs[1,0].plot(df_pol["t"], df_pol["R"], 'g-', label='Integrated (Coherence)')
+    axs[1,0].set_title("Field Coherence R (Core Love-OS Variable)")
+    axs[1,0].set_ylim(0, 1)
+    axs[1,0].legend()
+
+    # Carbon Stock
+    axs[1,1].plot(df_bau["t"], df_bau["Carbon"], 'r--', label='BAU')
+    axs[1,1].plot(df_pol["t"], df_pol["Carbon"], 'g-', label='Integrated')
+    axs[1,1].set_title("Accumulated Carbon")
+    axs[1,1].legend()
+
+    plt.tight_layout()
     plt.show()
 
+
 if __name__ == "__main__":
-    plot_simulation()
+    plot_comparison()
